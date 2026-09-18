@@ -554,7 +554,7 @@ const compressImageBeforeUpload = (file, maxWidth = 1920, maxHeight = 1080, qual
             </button>
 
             <a
-              href={getWebsiteUrl(content)}
+              href="https://www.maytriambhuja.in/"
               target="_blank"
               rel="noreferrer"
               className="btn btn-secondary btn-sm"
