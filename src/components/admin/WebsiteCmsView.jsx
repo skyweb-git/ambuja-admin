@@ -214,21 +214,36 @@ const compressImageBeforeUpload = (file, maxWidth = 1920, maxHeight = 1080, qual
       });
 
       if (uploadRes.success) {
-        if (currentTarget.key === 'brochurePdf' && uploadRes.data?.cloudinaryUrl) {
-          setContent((prev) => ({
-            ...prev,
-            brochure: {
-              ...(prev.brochure || {}),
-              url: uploadRes.data.cloudinaryUrl
-            }
-          }));
-        } else if (currentTarget.extraMeta?.projectIndex !== undefined && uploadRes.data?.cloudinaryUrl) {
+        const uploadedData = uploadRes.data;
+        const uploadedUrl = uploadedData?.cloudinaryUrl;
+
+        // Immediately update mediaList state so the preview re-renders instantly without being wiped
+        if (uploadedData) {
+          setMediaList((prevList) => {
+            const filtered = prevList.filter((m) => m.key !== uploadedData.key);
+            return [...filtered, uploadedData];
+          });
+        }
+
+        if (currentTarget.key === 'brochurePdf' && uploadedUrl) {
+          setContent((prev) => {
+            const updated = {
+              ...prev,
+              brochure: {
+                ...(prev.brochure || {}),
+                url: uploadedUrl
+              }
+            };
+            saveContentToAPI(updated).catch((err) => console.warn('Auto-save brochure error:', err));
+            return updated;
+          });
+        } else if (currentTarget.extraMeta?.projectIndex !== undefined && uploadedUrl) {
           const pIdx = currentTarget.extraMeta.projectIndex;
           setContent((prev) => {
             const prevProjects = prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items;
             const updated = [...prevProjects];
             if (updated[pIdx]) {
-              updated[pIdx] = { ...updated[pIdx], image: uploadRes.data.cloudinaryUrl };
+              updated[pIdx] = { ...updated[pIdx], image: uploadedUrl };
             }
             const updatedContent = {
               ...prev,
@@ -237,13 +252,10 @@ const compressImageBeforeUpload = (file, maxWidth = 1920, maxHeight = 1080, qual
                 items: updated
               }
             };
-            // Automatically persist the updated project image to API & MongoDB
-            saveContentToAPI(updatedContent).catch((err) => console.warn('Auto-save error:', err));
+            saveContentToAPI(updatedContent).catch((err) => console.warn('Auto-save project error:', err));
             return updatedContent;
           });
         }
-        const fetchedMedia = await fetchAllMedia();
-        if (fetchedMedia && fetchedMedia.data) setMediaList(fetchedMedia.data);
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
@@ -694,27 +706,27 @@ const compressImageBeforeUpload = (file, maxWidth = 1920, maxHeight = 1080, qual
                   disabled={uploadingKey === 'logo'}
                 >
                   {uploadingKey === 'logo' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  <span>{uploadingKey === 'logo' ? 'Uploading...' : 'Replace Logo on Cloud'}</span>
+                  <span>{uploadingKey === 'logo' ? 'Uploading...' : 'Replace Main Brand Logo'}</span>
                 </button>
               </div>
 
-              {/* Ambhuja Logo */}
+              {/* Sanghi City Logo */}
               <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                  <span className="stat-label">Ambhuja Navbar Logo</span>
+                  <span className="stat-label">Sanghi City Navbar Logo</span>
                   <span className="brand-badge emp-badge">Navbar Brand</span>
                 </div>
                 <div style={{ width: '100%', height: '80px', background: '#0b132b', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px' }}>
-                  <img src={getMediaUrl('sanghiLogo', '/ambhuja-icon.png')} alt="Ambhuja Logo" style={{ maxHeight: '55px', maxWidth: '100%', objectFit: 'contain' }} />
+                  <img src={getMediaUrl('sanghiLogo', '/sanghicity-logo.png')} alt="Sanghi Logo" style={{ maxHeight: '55px', maxWidth: '100%', objectFit: 'contain' }} />
                 </div>
                 <button
                   className="btn btn-secondary btn-sm"
                   style={{ width: '100%' }}
-                  onClick={() => handleTriggerUpload('sanghiLogo', 'logo', 'Maytri Ambhuja Logo', 'image')}
+                  onClick={() => handleTriggerUpload('sanghiLogo', 'logo', 'Sanghi City Logo', 'image')}
                   disabled={uploadingKey === 'sanghiLogo'}
                 >
                   {uploadingKey === 'sanghiLogo' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  <span>{uploadingKey === 'sanghiLogo' ? 'Uploading...' : 'Replace Ambhuja Logo'}</span>
+                  <span>{uploadingKey === 'sanghiLogo' ? 'Uploading...' : 'Replace Sanghi City Logo'}</span>
                 </button>
               </div>
 
@@ -754,9 +766,171 @@ const compressImageBeforeUpload = (file, maxWidth = 1920, maxHeight = 1080, qual
                   disabled={uploadingKey === 'heroVideo'}
                 >
                   {uploadingKey === 'heroVideo' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  <span>{uploadingKey === 'heroVideo' ? 'Uploading Video...' : 'Upload Video to Cloud'}</span>
+                  <span>{uploadingKey === 'heroVideo' ? 'Uploading Video...' : 'Upload Hero Video'}</span>
                 </button>
               </div>
+
+              {/* CTA Banner Poster */}
+              <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                  <span className="stat-label">CTA Banner Poster</span>
+                  <span className="brand-badge admin-badge">Image</span>
+                </div>
+                <div style={{ width: '100%', height: '80px', background: '#0b132b', borderRadius: '8px', overflow: 'hidden' }}>
+                  <img src={getMediaUrl('ctaPoster', '/cta-bg.png')} alt="CTA Poster" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ width: '100%' }}
+                  onClick={() => handleTriggerUpload('ctaPoster', 'image', 'CTA Banner Poster', 'image')}
+                  disabled={uploadingKey === 'ctaPoster'}
+                >
+                  {uploadingKey === 'ctaPoster' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  <span>{uploadingKey === 'ctaPoster' ? 'Uploading...' : 'Upload CTA Poster'}</span>
+                </button>
+              </div>
+
+              {/* CTA Streaming Video */}
+              <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                  <span className="stat-label">CTA Streaming Video</span>
+                  <span className="brand-badge emp-badge">Video (MP4)</span>
+                </div>
+                <div style={{ width: '100%', height: '80px', background: '#000', borderRadius: '8px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Film size={28} className="text-cyan-400" />
+                </div>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ width: '100%' }}
+                  onClick={() => handleTriggerUpload('ctaVideo', 'video', 'CTA Background Video', 'video')}
+                  disabled={uploadingKey === 'ctaVideo'}
+                >
+                  {uploadingKey === 'ctaVideo' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  <span>{uploadingKey === 'ctaVideo' ? 'Uploading...' : 'Upload CTA Video'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Clubhouse Renders Grid */}
+          <div className="table-card" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Layers size={18} className="text-cyan-600" />
+              <span>Grand Ambhuja Clubhouse 3D Renders</span>
+            </h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+              {[
+                { key: 'clubhouse_front_panorama', label: 'Grand Facade & Pool', fallback: '/clubhouse/clubhouse_front_panorama.webp' },
+                { key: 'clubhouse_pool_aerial', label: 'Resort Swimming Pool', fallback: '/clubhouse/clubhouse_pool_aerial.webp' },
+                { key: 'clubhouse_evening_elevation', label: 'Evening Illumination', fallback: '/clubhouse/clubhouse_evening_elevation.webp' },
+                { key: 'clubhouse_courtyard_lawn', label: 'Landscaped Courtyard', fallback: '/clubhouse/clubhouse_courtyard_lawn.webp' },
+              ].map((item) => (
+                <div key={item.key} className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                    <span className="stat-label">{item.label}</span>
+                    <span className="brand-badge admin-badge">Render</span>
+                  </div>
+                  <div style={{ width: '100%', height: '90px', background: '#0b132b', borderRadius: '8px', overflow: 'hidden' }}>
+                    <img src={getMediaUrl(item.key, item.fallback)} alt={item.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ width: '100%' }}
+                    onClick={() => handleTriggerUpload(item.key, 'clubhouse', item.label, 'image')}
+                    disabled={uploadingKey === item.key}
+                  >
+                    {uploadingKey === item.key ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    <span>{uploadingKey === item.key ? 'Uploading...' : `Replace ${item.label}`}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Villa Elevations Grid */}
+          <div className="table-card" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Building size={18} className="text-cyan-600" />
+              <span>Villa Elevations &amp; Township Amenities Gallery</span>
+            </h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+              {[
+                { key: 'elevation_01', label: 'Front Facade View 01', fallback: '/elevations/elevation_01.webp' },
+                { key: 'elevation_02', label: 'Corner Angle View 02', fallback: '/elevations/elevation_02.webp' },
+                { key: 'elevation_03', label: 'Contemporary View 03', fallback: '/elevations/elevation_03.webp' },
+                { key: 'elevation_04', label: 'Street Enclave View 04', fallback: '/elevations/elevation_04.webp' },
+                { key: 'elevation_05', label: 'Boutique Villa 05', fallback: '/elevations/elevation_05.webp' },
+                { key: 'elevation_06', label: 'Garden Perspective 06', fallback: '/elevations/elevation_06.webp' },
+                { key: 'elevation_07', label: 'Terrace Architecture 07', fallback: '/elevations/elevation_07.webp' },
+                { key: 'elevation_pool', label: 'Swimming Pool Deck', fallback: '/elevations/elevation_pool.webp' },
+                { key: 'elevation_cricket_pitch', label: 'Turf Cricket Pitch', fallback: '/elevations/elevation_cricket_pitch.webp' },
+                { key: 'elevation_park_day', label: '4.5-Acre Central Park', fallback: '/elevations/elevation_park_day.webp' },
+              ].map((item) => (
+                <div key={item.key} className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                    <span className="stat-label" style={{ fontSize: '0.82rem' }}>{item.label}</span>
+                    <span className="brand-badge emp-badge">Villa</span>
+                  </div>
+                  <div style={{ width: '100%', height: '80px', background: '#0b132b', borderRadius: '8px', overflow: 'hidden' }}>
+                    <img src={getMediaUrl(item.key, item.fallback)} alt={item.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ width: '100%' }}
+                    onClick={() => handleTriggerUpload(item.key, 'elevations', item.label, 'image')}
+                    disabled={uploadingKey === item.key}
+                  >
+                    {uploadingKey === item.key ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    <span>{uploadingKey === item.key ? 'Uploading...' : 'Replace'}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Master Floor Plans Grid */}
+          <div className="table-card" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <FileText size={18} className="text-cyan-600" />
+              <span>Master Architectural Floor Plans (222 &amp; 300 SQ YDS)</span>
+            </h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+              {[
+                { key: 'floorplan_222_east_ground', label: '222 East Ground', fallback: '/floorplans/222east_ground.webp' },
+                { key: 'floorplan_222_east_first', label: '222 East First', fallback: '/floorplans/222east_first.webp' },
+                { key: 'floorplan_222_east_terrace', label: '222 East Terrace', fallback: '/floorplans/222east_terrace.webp' },
+                { key: 'floorplan_222_west_ground', label: '222 West Ground', fallback: '/floorplans/222west_ground.jpg' },
+                { key: 'floorplan_222_west_first', label: '222 West First', fallback: '/floorplans/222west_first.jpg' },
+                { key: 'floorplan_222_west_terrace', label: '222 West Terrace', fallback: '/floorplans/222west_terrace.jpg' },
+                { key: 'floorplan_300_east_ground', label: '300 East Ground', fallback: '/floorplans/300_east_ground.jpg' },
+                { key: 'floorplan_300_east_first', label: '300 East First', fallback: '/floorplans/300_east_first.jpg' },
+                { key: 'floorplan_300_east_terrace', label: '300 East Terrace', fallback: '/floorplans/300_east_terrace.jpg' },
+                { key: 'floorplan_300_west_ground', label: '300 West Ground', fallback: '/floorplans/300_west_ground.jpg' },
+                { key: 'floorplan_300_west_first', label: '300 West First', fallback: '/floorplans/300_west_first.jpg' },
+                { key: 'floorplan_300_west_terrace', label: '300 West Terrace', fallback: '/floorplans/300_west_terrace.jpg' },
+              ].map((item) => (
+                <div key={item.key} className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                    <span className="stat-label" style={{ fontSize: '0.82rem' }}>{item.label}</span>
+                    <span className="brand-badge admin-badge">Blueprint</span>
+                  </div>
+                  <div style={{ width: '100%', height: '80px', background: '#f1f5f9', borderRadius: '8px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={getMediaUrl(item.key, item.fallback)} alt={item.label} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ width: '100%' }}
+                    onClick={() => handleTriggerUpload(item.key, 'floorplans', item.label, 'image')}
+                    disabled={uploadingKey === item.key}
+                  >
+                    {uploadingKey === item.key ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    <span>{uploadingKey === item.key ? 'Uploading...' : 'Replace Blueprint'}</span>
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>

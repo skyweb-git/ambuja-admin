@@ -223,3 +223,19 @@ export async function uploadMediaToAPI(mediaPayload) {
     return { success: false, message: err.message };
   }
 }
+
+export async function deleteMediaFromAPI(key) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/media/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+    const result = await res.json();
+    if (broadcastChannel && result.success) {
+      broadcastChannel.postMessage({ type: 'MEDIA_UPDATED', key, deleted: true });
+    }
+    return result;
+  } catch (err) {
+    console.error('Delete media error:', err.message);
+    return { success: false, message: err.message };
+  }
+}
