@@ -85,67 +85,25 @@ export const DEFAULT_CONTENT = {
     items: [
       {
         id: 'ambhuja',
-        title: 'Maytri Ambhuja',
-        tagline: 'Flagship 55-Acre Villa Township',
-        location: 'Sanghi City, Near ORR Exit 11, Hyderabad',
+        title: 'Maytri Ankura',
+        tagline: 'Open Plots',
+        location: 'Maheshwaram, Shamshabad Airport, Hyderabad',
         status: 'Ready for VIP Booking',
-        image: 'https://res.cloudinary.com/s8b4ps7b/image/upload/v1788847939/maytri_ambhuja/gallery/gallery_001.jpg',
+        image: 'https://res.cloudinary.com/s8b4ps7b/image/upload/v1789725505/maytri_ambhuja/gallery/project_img_0.jpg',
         buttonText: 'For More Info',
-        specs: [
-          { label: 'Project Area', value: '55 Acres' },
-          { label: 'Villas', value: '516 Premium Units' },
-          { label: 'Clubhouse', value: '90,000 Sq.Ft' },
-          { label: 'Starting Price', value: '3.2 Cr*' }
-        ],
-        features: ['222 & 300 SQ YDS Triplex Villas', '4.5-Acre Central Park', 'RERA: P02400007647']
+        specs: [],
+        features: []
       },
       {
         id: 'palms',
-        title: 'Sanghi City Palms',
-        tagline: 'Signature Luxury Gated Enclave',
-        location: 'Sanghi City Master Township, Hyderabad',
+        title: 'Maytri Susheela Kuteer',
+        tagline: 'Luxury Flats',
+        location: 'Vanasthalipuram, Injapur, Hyderabad',
         status: 'Phase 1 Fast Selling',
-        image: 'https://res.cloudinary.com/s8b4ps7b/image/upload/v1788847941/maytri_ambhuja/gallery/gallery_002.jpg',
+        image: 'https://res.cloudinary.com/s8b4ps7b/image/upload/v1789728586/maytri_ambhuja/gallery/project_img_1.jpg',
         buttonText: 'For More Info',
-        specs: [
-          { label: 'Project Area', value: '35 Acres' },
-          { label: 'Villas', value: '280 Luxury Villas' },
-          { label: 'Clubhouse', value: '50,000 Sq.Ft' },
-          { label: 'Configuration', value: '4 & 5 BHK Triplex' }
-        ],
-        features: ['Private Temperature Pool', 'Lush Forest Avenues', 'Gated 3-Tier Security']
-      },
-      {
-        id: 'meadows',
-        title: 'Maytri Green Meadows',
-        tagline: 'Eco-Luxury Sustainable Villa Estates',
-        location: 'Growth Corridor, East Hyderabad',
-        status: 'Exclusive Preview',
-        image: 'https://res.cloudinary.com/s8b4ps7b/image/upload/v1788847942/maytri_ambhuja/gallery/gallery_004.jpg',
-        buttonText: 'For More Info',
-        specs: [
-          { label: 'Project Area', value: '40 Acres' },
-          { label: 'Villas', value: '320 Eco Villas' },
-          { label: 'Open Space', value: '60% Greenery' },
-          { label: 'Type', value: 'Contemporary Villas' }
-        ],
-        features: ['Solar Powered Community', 'Organic Orchards', 'Outdoor Amphitheater']
-      },
-      {
-        id: 'grandeur',
-        title: 'Maytri Grandeur Suites',
-        tagline: 'Boutique High-End Township Living',
-        location: 'ORR Connectivity Hub, Hyderabad',
-        status: 'Upcoming Launch',
-        image: 'https://res.cloudinary.com/s8b4ps7b/image/upload/v1788847947/maytri_ambhuja/gallery/gallery_009.jpg',
-        buttonText: 'For More Info',
-        specs: [
-          { label: 'Project Area', value: '20 Acres' },
-          { label: 'Residences', value: 'Executive Suites' },
-          { label: 'Amenities', value: 'Sky Lounge & Spa' },
-          { label: 'Access', value: '2 Mins to ORR' }
-        ],
-        features: ['Infinity Sky Deck', 'Concierge & Valet', 'Smart Home Automation']
+        specs: [],
+        features: []
       }
     ]
   }
