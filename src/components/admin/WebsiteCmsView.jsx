@@ -461,7 +461,7 @@ const compressImageBeforeUpload = (file, maxWidth = 1920, maxHeight = 1080, qual
       {
         name: 'New Custom Amenity',
         category: 'Leisure',
-        img: '/images/Icons/playingArea.webp',
+        img: '',
         iconName: 'Sparkles'
       }
     ];
