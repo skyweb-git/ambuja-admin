@@ -70,6 +70,7 @@ export default function WebsiteCmsView() {
   const fileInputRef = useRef(null);
   const brochureFileInputRef = useRef(null);
   const [pendingUploadTarget, setPendingUploadTarget] = useState(null);
+  const pendingUploadTargetRef = useRef(null);
 
   useEffect(() => {
     loadCMSData();
@@ -135,9 +136,56 @@ export default function WebsiteCmsView() {
     }
   };
 
+const compressImageBeforeUpload = (file, maxWidth = 1920, maxHeight = 1080, quality = 0.85) => {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/') || file.type.includes('svg')) {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      if (width > maxWidth || height > maxHeight) {
+        if (width / height > maxWidth / maxHeight) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        } else {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const mime = file.type === 'image/png' && file.size < 600 * 1024 ? 'image/png' : 'image/jpeg';
+      const compressedDataUrl = canvas.toDataURL(mime, quality);
+      resolve(compressedDataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    };
+    img.src = objectUrl;
+  });
+};
+
   const handleTriggerUpload = (targetKey, category, title, resourceType, extraMeta = null) => {
-    setPendingUploadTarget({ key: targetKey, category, title, resourceType, extraMeta });
+    const targetObj = { key: targetKey, category, title, resourceType, extraMeta };
+    pendingUploadTargetRef.current = targetObj;
+    setPendingUploadTarget(targetObj);
     if (fileInputRef.current) {
+      fileInputRef.current.value = '';
       fileInputRef.current.accept = resourceType === 'video' ? 'video/*' : resourceType === 'raw' ? 'application/pdf,*/*' : 'image/*';
       fileInputRef.current.click();
     }
@@ -145,69 +193,72 @@ export default function WebsiteCmsView() {
 
   const handleFileSelected = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || !pendingUploadTarget) return;
+    const currentTarget = pendingUploadTargetRef.current || pendingUploadTarget;
+    if (!file || !currentTarget) return;
 
-    setUploadingKey(pendingUploadTarget.key);
+    setUploadingKey(currentTarget.key);
     setErrorMsg('');
 
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = async () => {
-        const base64Data = reader.result;
-        const uploadRes = await uploadMediaToAPI({
-          key: pendingUploadTarget.key,
-          file: base64Data,
-          title: pendingUploadTarget.title,
-          category: pendingUploadTarget.category,
-          resourceType: pendingUploadTarget.resourceType || (file.type.startsWith('video') ? 'video' : file.type.includes('pdf') ? 'raw' : 'image')
-        });
+      const base64Data = await compressImageBeforeUpload(file);
+      if (!base64Data) {
+        throw new Error('Could not process selected image');
+      }
 
-        if (uploadRes.success) {
-          if (pendingUploadTarget.key === 'brochurePdf' && uploadRes.data?.cloudinaryUrl) {
-            setContent((prev) => ({
+      const uploadRes = await uploadMediaToAPI({
+        key: currentTarget.key,
+        file: base64Data,
+        title: currentTarget.title,
+        category: currentTarget.category,
+        resourceType: currentTarget.resourceType || (file.type.startsWith('video') ? 'video' : file.type.includes('pdf') ? 'raw' : 'image')
+      });
+
+      if (uploadRes.success) {
+        if (currentTarget.key === 'brochurePdf' && uploadRes.data?.cloudinaryUrl) {
+          setContent((prev) => ({
+            ...prev,
+            brochure: {
+              ...(prev.brochure || {}),
+              url: uploadRes.data.cloudinaryUrl
+            }
+          }));
+        } else if (currentTarget.extraMeta?.projectIndex !== undefined && uploadRes.data?.cloudinaryUrl) {
+          const pIdx = currentTarget.extraMeta.projectIndex;
+          setContent((prev) => {
+            const prevProjects = prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items;
+            const updated = [...prevProjects];
+            if (updated[pIdx]) {
+              updated[pIdx] = { ...updated[pIdx], image: uploadRes.data.cloudinaryUrl };
+            }
+            const updatedContent = {
               ...prev,
-              brochure: {
-                ...(prev.brochure || {}),
-                url: uploadRes.data.cloudinaryUrl
+              projectsSection: {
+                ...(prev.projectsSection || {}),
+                items: updated
               }
-            }));
-          } else if (pendingUploadTarget.extraMeta?.projectIndex !== undefined && uploadRes.data?.cloudinaryUrl) {
-            const pIdx = pendingUploadTarget.extraMeta.projectIndex;
-            setContent((prev) => {
-              const prevProjects = prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items;
-              const updated = [...prevProjects];
-              if (updated[pIdx]) {
-                updated[pIdx] = { ...updated[pIdx], image: uploadRes.data.cloudinaryUrl };
-              }
-              const updatedContent = {
-                ...prev,
-                projectsSection: {
-                  ...(prev.projectsSection || {}),
-                  items: updated
-                }
-              };
-              // Automatically persist the updated project image to API & MongoDB
-              saveContentToAPI(updatedContent).catch((err) => console.warn('Auto-save error:', err));
-              return updatedContent;
-            });
-          }
-          const fetchedMedia = await fetchAllMedia();
-          if (fetchedMedia && fetchedMedia.data) setMediaList(fetchedMedia.data);
-          setSaveSuccess(true);
-          setTimeout(() => setSaveSuccess(false), 3000);
-        } else {
-          setErrorMsg(uploadRes.message || 'Cloudinary upload failed');
+            };
+            // Automatically persist the updated project image to API & MongoDB
+            saveContentToAPI(updatedContent).catch((err) => console.warn('Auto-save error:', err));
+            return updatedContent;
+          });
         }
-        setUploadingKey(null);
-        setPendingUploadTarget(null);
-      };
+        const fetchedMedia = await fetchAllMedia();
+        if (fetchedMedia && fetchedMedia.data) setMediaList(fetchedMedia.data);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        setErrorMsg(uploadRes.message || 'Upload failed');
+      }
     } catch (err) {
-      setErrorMsg(err.message || 'File reading error');
+      setErrorMsg(err.message || 'File processing error');
+    } finally {
       setUploadingKey(null);
+      pendingUploadTargetRef.current = null;
       setPendingUploadTarget(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
-    e.target.value = '';
   };
 
   // Projects list manipulators
