@@ -24,3 +24,23 @@ export async function checkApiHealth() {
     return { online: false, error: err.message };
   }
 }
+
+export const getWebsiteUrl = (contentData = null) => {
+  const envSite = typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL;
+  if (envSite) return envSite;
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:3000';
+    }
+  }
+
+  const custom = contentData?.contact?.websiteUrl;
+  if (custom) {
+    return custom.startsWith('http') ? custom : `https://${custom}`;
+  }
+
+  return 'https://www.maytriambhuja.in';
+};
+

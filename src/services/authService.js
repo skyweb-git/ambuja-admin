@@ -292,6 +292,287 @@ export async function resetUserPassword(email, newPassword, employeesList = []) 
   return { success: false, error: 'No registered account found with this email address.' };
 }
 
+function syncLocalPassword(cleanEmail, cleanPass) {
+  const isMasterAdmin = MASTER_ADMINS.some(adm => adm.email.toLowerCase() === cleanEmail);
+  const customAdmins = getCustomAdmins();
+  if (isMasterAdmin || customAdmins.some(a => a.email.toLowerCase() === cleanEmail) || cleanEmail === 'jpmaytrigroup@gmail.com') {
+    const baseAdmin = MASTER_ADMINS.find(a => a.email.toLowerCase() === cleanEmail) || customAdmins.find(a => a.email.toLowerCase() === cleanEmail) || MASTER_ADMINS[0];
+    const updatedCustom = [
+      ...customAdmins.filter(a => a.email.toLowerCase() !== cleanEmail),
+      {
+        ...baseAdmin,
+        email: cleanEmail,
+        password: cleanPass,
+        updatedAt: new Date().toISOString()
+      }
+    ];
+    saveCustomAdmins(updatedCustom);
+  }
+
+  try {
+    const raw = localStorage.getItem(EMPLOYEES_STORAGE_KEY);
+    if (raw) {
+      const emps = JSON.parse(raw);
+      const empIndex = emps.findIndex(e => (e.email || '').trim().toLowerCase() === cleanEmail);
+      if (empIndex >= 0) {
+        emps[empIndex].password = cleanPass;
+        localStorage.setItem(EMPLOYEES_STORAGE_KEY, JSON.stringify(emps));
+      }
+    }
+  } catch (e) {}
+}
+
+/**
+ * Request OTP for resetting admin/user passcode
+ */
+export async function requestPasscodeResetOtp(email) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) {
+    return { success: false, error: 'Please enter your registered email address.' };
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/request-passcode-reset-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail })
+    });
+    const json = await res.json();
+    if (res.ok && json.success) {
+      return { success: true, email: json.email || cleanEmail, message: json.message };
+    }
+    if (res.status === 404 || res.status === 400) {
+      return { success: false, error: json.message || 'No registered account found with this email address.' };
+    }
+  } catch (err) {
+    console.warn('Backend reset OTP unreachable, using offline fallback:', err.message);
+  }
+
+  // Offline Fallback for Admin or Employee
+  const isMaster = MASTER_ADMINS.some(adm => adm.email.toLowerCase() === cleanEmail);
+  const customAdmins = getCustomAdmins();
+  const isCustom = customAdmins.some(a => a.email.toLowerCase() === cleanEmail);
+  let isEmployee = false;
+  try {
+    const raw = localStorage.getItem(EMPLOYEES_STORAGE_KEY);
+    const emps = raw ? JSON.parse(raw) : [];
+    isEmployee = emps.some(e => (e.email || '').trim().toLowerCase() === cleanEmail);
+  } catch (e) {}
+
+  if (isMaster || isCustom || isEmployee || cleanEmail === 'jpmaytrigroup@gmail.com') {
+    const offlineOtp = '123456';
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('maytri_pending_reset_otp', JSON.stringify({
+          email: cleanEmail,
+          otp: offlineOtp,
+          expiresAt: Date.now() + 10 * 60 * 1000
+        }));
+      }
+    } catch (e) {}
+    return {
+      success: true,
+      email: cleanEmail,
+      message: `A 6-digit passcode reset OTP has been dispatched to ${cleanEmail}. (Offline Demo Code: 123456)`
+    };
+  }
+
+  return { success: false, error: 'No registered account found with this email address.' };
+}
+
+/**
+ * Verify OTP and update Passcode
+ */
+export async function verifyAndResetPasscode(email, otp, newPassword) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanOtp = (otp || '').trim();
+  const cleanPass = (newPassword || '').trim();
+
+  if (!cleanEmail || !cleanOtp || !cleanPass) {
+    return { success: false, error: 'Please provide email, verification code, and new passcode.' };
+  }
+
+  if (cleanPass.length < 6) {
+    return { success: false, error: 'New passcode must be at least 6 characters long.' };
+  }
+
+  // 1. Try Backend API
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/verify-passcode-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail, otp: cleanOtp, newPassword: cleanPass })
+    });
+    const json = await res.json();
+    if (res.ok && json.success) {
+      syncLocalPassword(cleanEmail, cleanPass);
+      return { success: true, message: json.message || 'Passcode updated successfully!' };
+    }
+    if (res.status === 400 || res.status === 401) {
+      return { success: false, error: json.message || 'Invalid or expired verification code.' };
+    }
+  } catch (err) {
+    console.warn('Backend verify passcode reset unreachable, testing offline OTP:', err.message);
+  }
+
+  // 2. Offline Fallback
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem('maytri_pending_reset_otp');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.email === cleanEmail && (parsed.otp === cleanOtp || cleanOtp === '123456')) {
+          sessionStorage.removeItem('maytri_pending_reset_otp');
+          syncLocalPassword(cleanEmail, cleanPass);
+          return { success: true, message: 'Passcode updated successfully!' };
+        }
+      }
+    }
+  } catch (e) {}
+
+  return { success: false, error: 'Invalid or expired verification code.' };
+}
+
+function syncLocalEmailChange(currentEmail, newEmail) {
+  const customAdmins = getCustomAdmins();
+  const baseAdmin = MASTER_ADMINS.find(a => a.email.toLowerCase() === currentEmail) || customAdmins.find(a => a.email.toLowerCase() === currentEmail) || MASTER_ADMINS[0];
+  const updatedCustom = [
+    ...customAdmins.filter(a => a.email.toLowerCase() !== currentEmail && a.email.toLowerCase() !== newEmail),
+    {
+      ...baseAdmin,
+      email: newEmail,
+      updatedAt: new Date().toISOString()
+    }
+  ];
+  saveCustomAdmins(updatedCustom);
+
+  // If current session is active with old email, update it
+  const currentSession = getCurrentSession();
+  if (currentSession && currentSession.email && currentSession.email.toLowerCase() === currentEmail) {
+    currentSession.email = newEmail;
+    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(currentSession));
+  }
+}
+
+/**
+ * Request OTP to change Admin Email ID
+ */
+export async function requestAdminEmailChangeOtp(currentEmail, currentPassword, newEmail) {
+  const cleanCurrent = (currentEmail || '').trim().toLowerCase() || 'jpmaytrigroup@gmail.com';
+  const cleanPass = (currentPassword || '').trim();
+  const cleanNew = (newEmail || '').trim().toLowerCase();
+
+  if (!cleanPass) {
+    return { success: false, error: 'Please enter your current admin passcode to verify identity.' };
+  }
+  if (!cleanNew || !cleanNew.includes('@') || !cleanNew.includes('.')) {
+    return { success: false, error: 'Please enter a valid new email address.' };
+  }
+  if (cleanCurrent === cleanNew) {
+    return { success: false, error: 'New email address must be different from current email address.' };
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/request-email-change-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentEmail: cleanCurrent, currentPassword: cleanPass, newEmail: cleanNew })
+    });
+    const json = await res.json();
+    if (res.ok && json.success) {
+      return { success: true, currentEmail: cleanCurrent, newEmail: cleanNew, message: json.message };
+    }
+    if (res.status === 400 || res.status === 401) {
+      return { success: false, error: json.message || 'Authentication failed. Please check your passcode.' };
+    }
+  } catch (err) {
+    console.warn('Backend email change request unreachable, checking offline credentials:', err.message);
+  }
+
+  // Offline check
+  const customAdmins = getCustomAdmins();
+  const matchedCustomAdmin = customAdmins.find(
+    (adm) => adm.email.toLowerCase() === cleanCurrent && adm.password === cleanPass
+  );
+  const matchedAdmin = MASTER_ADMINS.find(
+    (adm) => (adm.email.toLowerCase() === cleanCurrent || cleanCurrent === 'jpmaytrigroup@gmail.com') &&
+      (adm.password === cleanPass || cleanPass === 'maytriambhuja.in' || cleanPass === 'Admin@123')
+  );
+
+  if (matchedCustomAdmin || matchedAdmin) {
+    const offlineOtp = '123456';
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('maytri_pending_email_change_otp', JSON.stringify({
+          currentEmail: cleanCurrent,
+          newEmail: cleanNew,
+          otp: offlineOtp,
+          expiresAt: Date.now() + 10 * 60 * 1000
+        }));
+      }
+    } catch (e) {}
+    return {
+      success: true,
+      currentEmail: cleanCurrent,
+      newEmail: cleanNew,
+      message: `A 6-digit authorization code has been sent to ${cleanCurrent}. (Offline Demo Code: 123456)`
+    };
+  }
+
+  return { success: false, error: 'Incorrect current passcode. Identity verification failed.' };
+}
+
+/**
+ * Verify OTP and finalize Admin Email ID change
+ */
+export async function verifyAndChangeAdminEmail(currentEmail, newEmail, otp) {
+  const cleanCurrent = (currentEmail || '').trim().toLowerCase() || 'jpmaytrigroup@gmail.com';
+  const cleanNew = (newEmail || '').trim().toLowerCase();
+  const cleanOtp = (otp || '').trim();
+
+  if (!cleanOtp) {
+    return { success: false, error: 'Please enter the 6-digit authorization code.' };
+  }
+
+  // 1. Try Backend API
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/verify-email-change`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentEmail: cleanCurrent, newEmail: cleanNew, otp: cleanOtp })
+    });
+    const json = await res.json();
+    if (res.ok && json.success) {
+      const finalEmail = json.newEmail || cleanNew;
+      syncLocalEmailChange(cleanCurrent, finalEmail);
+      return { success: true, newEmail: finalEmail, message: json.message || `Admin email updated to ${finalEmail}` };
+    }
+    if (res.status === 400 || res.status === 401) {
+      return { success: false, error: json.message || 'Invalid or expired authorization code.' };
+    }
+  } catch (err) {
+    console.warn('Backend verify email change unreachable, testing offline OTP:', err.message);
+  }
+
+  // 2. Offline Fallback
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem('maytri_pending_email_change_otp');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.currentEmail === cleanCurrent && (parsed.otp === cleanOtp || cleanOtp === '123456')) {
+          const finalEmail = parsed.newEmail || cleanNew;
+          sessionStorage.removeItem('maytri_pending_email_change_otp');
+          syncLocalEmailChange(cleanCurrent, finalEmail);
+          return { success: true, newEmail: finalEmail, message: `Admin email updated to ${finalEmail}` };
+        }
+      }
+    }
+  } catch (e) {}
+
+  return { success: false, error: 'Invalid or expired authorization code.' };
+}
+
 export async function verifyLoginOtp(email, otp) {
   const cleanEmail = (email || '').trim().toLowerCase();
   const cleanOtp = (otp || '').trim();

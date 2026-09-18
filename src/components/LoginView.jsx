@@ -17,19 +17,39 @@ import {
   Briefcase,
   Crown
 } from 'lucide-react';
-import { loginWithCredentials, resetUserPassword, verifyLoginOtp, resendLoginOtp } from '../services/authService';
+import { 
+  loginWithCredentials, 
+  resetUserPassword, 
+  verifyLoginOtp, 
+  resendLoginOtp,
+  requestPasscodeResetOtp,
+  verifyAndResetPasscode,
+  requestAdminEmailChangeOtp,
+  verifyAndChangeAdminEmail
+} from '../services/authService';
 
 export default function LoginView({ onLoginSuccess, employees = [] }) {
   // Role selection: 'admin' | 'employee'
   const [loginRole, setLoginRole] = useState('admin');
   const [isResetMode, setIsResetMode] = useState(false);
+  const [resetStep, setResetStep] = useState(1); // 1 = Request OTP, 2 = Verify OTP & Set New Passcode
+  const [isEmailChangeMode, setIsEmailChangeMode] = useState(false);
+  const [emailChangeStep, setEmailChangeStep] = useState(1); // 1 = Request OTP, 2 = Verify OTP & Update Email
   const [isOtpMode, setIsOtpMode] = useState(false);
   
   // Admin Login States (default jpmaytrigroup@gmail.com)
   const [adminEmail, setAdminEmail] = useState('jpmaytrigroup@gmail.com');
   const [adminPassword, setAdminPassword] = useState('');
-  const [showAdminEmailInput, setShowAdminEmailInput] = useState(false);
   
+  // Admin Email Change States
+  const [currentAdminPasscode, setCurrentAdminPasscode] = useState('');
+  const [showCurrentAdminPasscode, setShowCurrentAdminPasscode] = useState(false);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [emailChangeOtp, setEmailChangeOtp] = useState('');
+  const [emailChangeOtpLoading, setEmailChangeOtpLoading] = useState(false);
+  const [emailChangeVerifyLoading, setEmailChangeVerifyLoading] = useState(false);
+  const [emailChangeCountdown, setEmailChangeCountdown] = useState(60);
+
   // Employee Login States
   const [employeeEmail, setEmployeeEmail] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
@@ -43,7 +63,7 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
   // Active target email for OTP verification
   const [activeTargetEmail, setActiveTargetEmail] = useState('jpmaytrigroup@gmail.com');
 
-  // OTP states
+  // Login OTP states
   const [otpValue, setOtpValue] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
@@ -51,12 +71,15 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
 
   // Reset Password states
   const [resetEmail, setResetEmail] = useState('');
+  const [resetOtp, setResetOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
+  const [resetOtpLoading, setResetOtpLoading] = useState(false);
+  const [resetVerifyLoading, setResetVerifyLoading] = useState(false);
+  const [resetCountdown, setResetCountdown] = useState(60);
 
-  // Countdown timer for Resend OTP
+  // Countdown timer for Login Resend OTP
   useEffect(() => {
     let timer = null;
     if (isOtpMode && resendCountdown > 0) {
@@ -69,11 +92,40 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
     };
   }, [isOtpMode, resendCountdown]);
 
+  // Countdown timer for Reset Passcode OTP
+  useEffect(() => {
+    let timer = null;
+    if (isResetMode && resetStep === 2 && resetCountdown > 0) {
+      timer = setInterval(() => {
+        setResetCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isResetMode, resetStep, resetCountdown]);
+
+  // Countdown timer for Email Change OTP
+  useEffect(() => {
+    let timer = null;
+    if (isEmailChangeMode && emailChangeStep === 2 && emailChangeCountdown > 0) {
+      timer = setInterval(() => {
+        setEmailChangeCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isEmailChangeMode, emailChangeStep, emailChangeCountdown]);
+
   // Handle switching role tabs
   const handleRoleChange = (role) => {
     setLoginRole(role);
     setIsOtpMode(false);
     setIsResetMode(false);
+    setResetStep(1);
+    setIsEmailChangeMode(false);
+    setEmailChangeStep(1);
     setError('');
     setSuccessMessage('');
     setOtpValue('');
@@ -176,48 +228,195 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
     }
   };
 
-  // Reset Password Handler
-  const handleResetSubmit = async (e) => {
+  // --- Passcode Reset Handlers (OTP Verified) ---
+  const handleRequestResetOtp = async (e) => {
     e.preventDefault();
     setError('');
     setSuccessMessage('');
 
-    if (!resetEmail.trim()) {
+    const emailToTarget = resetEmail.trim();
+    if (!emailToTarget) {
       setError('Please enter your registered email address.');
       return;
     }
 
+    setResetOtpLoading(true);
+    try {
+      const res = await requestPasscodeResetOtp(emailToTarget);
+      if (res.success) {
+        setResetStep(2);
+        setResetCountdown(60);
+        setSuccessMessage(res.message || `A 6-digit passcode reset OTP has been sent to ${emailToTarget}.`);
+      } else {
+        setError(res.error || 'Failed to send passcode reset OTP. Please check your email.');
+      }
+    } catch (err) {
+      setError(err.message || 'An error occurred while requesting passcode reset OTP.');
+    } finally {
+      setResetOtpLoading(false);
+    }
+  };
+
+  const handleVerifyAndResetPasscode = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMessage('');
+
+    if (!resetOtp.trim() || resetOtp.trim().length < 6) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+
     if (!newPassword.trim() || newPassword.length < 6) {
-      setError('Password must be at least 6 characters.');
+      setError('New passcode must be at least 6 characters.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setError('New password and confirm password do not match.');
+      setError('New passcode and confirm passcode do not match.');
       return;
     }
 
-    setResetLoading(true);
+    setResetVerifyLoading(true);
     try {
-      const res = await resetUserPassword(resetEmail, newPassword, employees);
+      const res = await verifyAndResetPasscode(resetEmail.trim(), resetOtp.trim(), newPassword.trim());
       if (res.success) {
-        setSuccessMessage('Password updated successfully! You can now sign in with your new password.');
+        setSuccessMessage(res.message || 'Passcode updated successfully! You can now sign in with your new passcode.');
         if (loginRole === 'admin') {
-          setAdminPassword(newPassword);
+          setAdminPassword(newPassword.trim());
         } else {
-          setEmployeePassword(newPassword);
+          setEmployeePassword(newPassword.trim());
         }
         setIsResetMode(false);
+        setResetStep(1);
         setResetEmail('');
+        setResetOtp('');
         setNewPassword('');
         setConfirmPassword('');
       } else {
-        setError(res.error || 'Could not reset password. Please check your email.');
+        setError(res.error || 'Failed to update passcode. Please check the OTP code and try again.');
       }
     } catch (err) {
-      setError(err.message || 'Failed to update password.');
+      setError(err.message || 'Verification error. Please try again.');
     } finally {
-      setResetLoading(false);
+      setResetVerifyLoading(false);
+    }
+  };
+
+  const handleResendResetOtp = async () => {
+    if (resetCountdown > 0 || resetOtpLoading) return;
+    setResetOtpLoading(true);
+    setError('');
+    setSuccessMessage('');
+    try {
+      const res = await requestPasscodeResetOtp(resetEmail.trim());
+      if (res.success) {
+        setResetCountdown(60);
+        setSuccessMessage(res.message || `New passcode reset OTP sent to ${resetEmail.trim()}.`);
+      } else {
+        setError(res.error || 'Failed to resend code.');
+      }
+    } catch (err) {
+      setError(err.message || 'Could not resend OTP.');
+    } finally {
+      setResetOtpLoading(false);
+    }
+  };
+
+  // --- Admin Email Change Handlers (OTP Verified) ---
+  const handleRequestEmailChangeOtp = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMessage('');
+
+    const currEmail = (adminEmail || '').trim() || 'jpmaytrigroup@gmail.com';
+    const currPass = currentAdminPasscode.trim();
+    const newMail = newAdminEmail.trim();
+
+    if (!currPass) {
+      setError('Please enter your current admin passcode to verify identity.');
+      return;
+    }
+    if (!newMail || !newMail.includes('@') || !newMail.includes('.')) {
+      setError('Please provide a valid new email address.');
+      return;
+    }
+    if (currEmail.toLowerCase() === newMail.toLowerCase()) {
+      setError('New email address must be different from current email address.');
+      return;
+    }
+
+    setEmailChangeOtpLoading(true);
+    try {
+      const res = await requestAdminEmailChangeOtp(currEmail, currPass, newMail);
+      if (res.success) {
+        setEmailChangeStep(2);
+        setEmailChangeCountdown(60);
+        setSuccessMessage(res.message || `A 6-digit authorization code has been sent to ${currEmail}.`);
+      } else {
+        setError(res.error || 'Authentication failed. Please verify your passcode.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to request email change OTP.');
+    } finally {
+      setEmailChangeOtpLoading(false);
+    }
+  };
+
+  const handleVerifyEmailChange = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMessage('');
+
+    const currEmail = (adminEmail || '').trim() || 'jpmaytrigroup@gmail.com';
+    const newMail = newAdminEmail.trim();
+    const otp = emailChangeOtp.trim();
+
+    if (!otp || otp.length < 6) {
+      setError('Please enter the 6-digit authorization code.');
+      return;
+    }
+
+    setEmailChangeVerifyLoading(true);
+    try {
+      const res = await verifyAndChangeAdminEmail(currEmail, newMail, otp);
+      if (res.success) {
+        const updatedEmail = res.newEmail || newMail;
+        setAdminEmail(updatedEmail);
+        setSuccessMessage(res.message || `Admin email successfully updated to ${updatedEmail}! You can now sign in with your new email.`);
+        setIsEmailChangeMode(false);
+        setEmailChangeStep(1);
+        setCurrentAdminPasscode('');
+        setNewAdminEmail('');
+        setEmailChangeOtp('');
+      } else {
+        setError(res.error || 'Invalid or expired authorization code.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to verify email change.');
+    } finally {
+      setEmailChangeVerifyLoading(false);
+    }
+  };
+
+  const handleResendEmailChangeOtp = async () => {
+    if (emailChangeCountdown > 0 || emailChangeOtpLoading) return;
+    const currEmail = (adminEmail || '').trim() || 'jpmaytrigroup@gmail.com';
+    setEmailChangeOtpLoading(true);
+    setError('');
+    setSuccessMessage('');
+    try {
+      const res = await requestAdminEmailChangeOtp(currEmail, currentAdminPasscode.trim(), newAdminEmail.trim());
+      if (res.success) {
+        setEmailChangeCountdown(60);
+        setSuccessMessage(res.message || `New authorization code dispatched to ${currEmail}.`);
+      } else {
+        setError(res.error || 'Failed to resend authorization code.');
+      }
+    } catch (err) {
+      setError(err.message || 'Could not resend authorization code.');
+    } finally {
+      setEmailChangeOtpLoading(false);
     }
   };
 
@@ -240,7 +439,7 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
         </div>
 
         {/* Role Selector Tabs (Admin vs Employee) */}
-        {!isOtpMode && !isResetMode && (
+        {!isOtpMode && !isResetMode && !isEmailChangeMode && (
           <div className="login-role-tabs">
             <button
               type="button"
@@ -270,10 +469,12 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
                 {isOtpMode 
                   ? 'Step 2: Enter 6-Digit Email OTP' 
                   : isResetMode 
-                    ? 'Security & Password Setup' 
-                    : loginRole === 'admin'
-                      ? 'Admin Passcode Authentication'
-                      : 'Employee & Staff Authentication'}
+                    ? (resetStep === 1 ? 'Step 1: Request Passcode Reset OTP' : 'Step 2: Enter OTP & Set New Passcode')
+                    : isEmailChangeMode
+                      ? (emailChangeStep === 1 ? 'Step 1: Authorize Admin Email Change' : 'Step 2: Enter OTP & Update Admin Email')
+                      : loginRole === 'admin'
+                        ? 'Admin Passcode Authentication'
+                        : 'Employee & Staff Authentication'}
               </span>
             </span>
           </div>
@@ -283,7 +484,23 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
                 We have sent a 6-digit one-time passcode to <strong style={{ color: '#000' }}>{activeTargetEmail}</strong>. Please enter the code below to complete sign-in.
               </>
             ) : isResetMode ? (
-              'Enter your registered email address to set or update your password.'
+              resetStep === 1 ? (
+                'Enter your registered work email address below. We will send a 6-digit OTP code to verify your identity before allowing a passcode reset.'
+              ) : (
+                <>
+                  We have sent a 6-digit verification code to <strong style={{ color: '#000' }}>{resetEmail}</strong>. Enter the OTP and your new passcode below.
+                </>
+              )
+            ) : isEmailChangeMode ? (
+              emailChangeStep === 1 ? (
+                <>
+                  To change the registered Admin Email ID, enter your current admin passcode and the new email address. A 6-digit authorization OTP will be sent to your current email (<strong style={{ color: '#000' }}>{adminEmail || 'jpmaytrigroup@gmail.com'}</strong>).
+                </>
+              ) : (
+                <>
+                  Enter the 6-digit authorization code sent to your current email (<strong style={{ color: '#000' }}>{adminEmail || 'jpmaytrigroup@gmail.com'}</strong>) to confirm updating to <strong style={{ color: '#000' }}>{newAdminEmail}</strong>.
+                </>
+              )
             ) : loginRole === 'admin' ? (
               <>
                 Enter your admin passcode below. A one-time verification OTP will be sent directly to <strong style={{ color: '#000' }}>{adminEmail || 'jpmaytrigroup@gmail.com'}</strong>.
@@ -323,7 +540,7 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
         )}
 
         {isOtpMode ? (
-          /* Step 2: OTP 2FA Verification Form */
+          /* Step 2: Login OTP 2FA Verification Form */
           <form onSubmit={handleOtpSubmit} className="login-form">
             <div className="form-group">
               <label className="form-label" htmlFor="otp-input" style={{ textAlign: 'center', display: 'block', fontSize: '0.9rem', fontWeight: 700 }}>
@@ -426,46 +643,247 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
               </button>
             </div>
           </form>
+        ) : isEmailChangeMode ? (
+          /* Admin Email ID Change Form (OTP Protected) */
+          emailChangeStep === 1 ? (
+            /* Email Change Step 1: Passcode Verification & New Email Input */
+            <form onSubmit={handleRequestEmailChangeOtp} className="login-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="current-admin-email">
+                  Current Admin Email Address
+                </label>
+                <div className="login-input-wrap">
+                  <Mail size={17} className="login-input-icon" />
+                  <input
+                    id="current-admin-email"
+                    type="email"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="jpmaytrigroup@gmail.com"
+                    className="form-input login-input"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="current-admin-passcode">
+                  Current Admin Passcode (Identity Check)
+                </label>
+                <div className="login-input-wrap">
+                  <Lock size={17} className="login-input-icon" />
+                  <input
+                    id="current-admin-passcode"
+                    type={showCurrentAdminPasscode ? 'text' : 'password'}
+                    required
+                    value={currentAdminPasscode}
+                    onChange={(e) => setCurrentAdminPasscode(e.target.value)}
+                    placeholder="Enter current admin passcode"
+                    className="form-input login-input"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle-btn"
+                    onClick={() => setShowCurrentAdminPasscode(!showCurrentAdminPasscode)}
+                    aria-label={showCurrentAdminPasscode ? "Hide password" : "Show password"}
+                  >
+                    {showCurrentAdminPasscode ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="new-admin-email">
+                  New Admin Work Email Address
+                </label>
+                <div className="login-input-wrap">
+                  <Mail size={17} className="login-input-icon" />
+                  <input
+                    id="new-admin-email"
+                    type="email"
+                    required
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    placeholder="e.g. newadmin@maytri.com"
+                    className="form-input login-input"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary login-submit-btn"
+                disabled={emailChangeOtpLoading}
+              >
+                {emailChangeOtpLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Sending Authorization OTP...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Send Authorization OTP to Current Email</span>
+                    <ArrowRight size={16} />
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setSuccessMessage('');
+                  setIsEmailChangeMode(false);
+                  setEmailChangeStep(1);
+                  setCurrentAdminPasscode('');
+                  setNewAdminEmail('');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginTop: '0.25rem'
+                }}
+              >
+                <ArrowLeft size={15} />
+                <span>Cancel &amp; Back to Sign In</span>
+              </button>
+            </form>
+          ) : (
+            /* Email Change Step 2: 6-digit OTP Verification */
+            <form onSubmit={handleVerifyEmailChange} className="login-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="email-change-otp" style={{ textAlign: 'center', display: 'block', fontSize: '0.9rem', fontWeight: 700 }}>
+                  Enter 6-Digit Authorization OTP sent to {adminEmail}
+                </label>
+                <div className="login-input-wrap" style={{ justifyContent: 'center' }}>
+                  <Key size={18} className="login-input-icon" />
+                  <input
+                    id="email-change-otp"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    required
+                    value={emailChangeOtp}
+                    onChange={(e) => setEmailChangeOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="• • • • • •"
+                    className="form-input login-input"
+                    style={{
+                      textAlign: 'center',
+                      fontSize: '1.5rem',
+                      letterSpacing: '0.55em',
+                      fontWeight: '800',
+                      fontFamily: 'monospace',
+                      padding: '0.75rem 1rem 0.75rem 2.5rem'
+                    }}
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div style={{
+                background: '#f1f5f9',
+                padding: '0.75rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '0.85rem',
+                color: '#334155',
+                lineHeight: 1.4,
+                marginBottom: '0.5rem'
+              }}>
+                <div><strong>Current Admin:</strong> {adminEmail}</div>
+                <div><strong>Transfer To:</strong> {newAdminEmail}</div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary login-submit-btn"
+                disabled={emailChangeVerifyLoading || emailChangeOtp.length < 6}
+              >
+                {emailChangeVerifyLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Verifying &amp; Updating Email...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={18} />
+                    <span>Verify OTP &amp; Update Admin Email</span>
+                  </>
+                )}
+              </button>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.85rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailChangeStep(1);
+                    setEmailChangeOtp('');
+                    setError('');
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    background: 'none',
+                    border: 'none',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <ArrowLeft size={15} />
+                  <span>Back to Step 1</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResendEmailChangeOtp}
+                  disabled={emailChangeCountdown > 0 || emailChangeOtpLoading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    background: 'none',
+                    border: 'none',
+                    color: emailChangeCountdown > 0 ? '#94a3b8' : '#0d9488',
+                    fontWeight: 700,
+                    cursor: emailChangeCountdown > 0 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {emailChangeOtpLoading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Resending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={14} />
+                      <span>{emailChangeCountdown > 0 ? `Resend in ${emailChangeCountdown}s` : 'Resend Code'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )
         ) : !isResetMode ? (
           /* Step 1: Login Form (Admin or Employee) */
           <form onSubmit={handleSubmit} className="login-form">
             {loginRole === 'admin' ? (
               /* Admin Form */
               <>
-                {showAdminEmailInput && (
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="admin-email">
-                      Admin Work Email
-                    </label>
-                    <div className="login-input-wrap">
-                      <Mail size={17} className="login-input-icon" />
-                      <input
-                        id="admin-email"
-                        type="email"
-                        value={adminEmail}
-                        onChange={(e) => setAdminEmail(e.target.value)}
-                        placeholder="jpmaytrigroup@gmail.com"
-                        className="form-input login-input"
-                        autoComplete="email"
-                      />
-                    </div>
-                  </div>
-                )}
-
                 <div className="form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label className="form-label" htmlFor="admin-password">
-                      Admin Passcode
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowAdminEmailInput(!showAdminEmailInput)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0d9488', fontSize: '0.8rem', fontWeight: 600 }}
-                      className="hover:underline"
-                    >
-                      {showAdminEmailInput ? 'Hide Custom Email' : 'Custom Email?'}
-                    </button>
-                  </div>
+                  <label className="form-label" htmlFor="admin-password">
+                    Admin Passcode
+                  </label>
                   <div className="login-input-wrap">
                     <Lock size={17} className="login-input-icon" />
                     <input
@@ -507,6 +925,40 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
                     </>
                   )}
                 </button>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.35rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError('');
+                      setSuccessMessage('');
+                      setResetEmail(adminEmail || 'jpmaytrigroup@gmail.com');
+                      setResetStep(1);
+                      setIsResetMode(true);
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.8rem', fontWeight: 500 }}
+                    className="hover:underline"
+                  >
+                    Forgot / Reset Passcode?
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError('');
+                      setSuccessMessage('');
+                      setCurrentAdminPasscode('');
+                      setNewAdminEmail('');
+                      setEmailChangeOtp('');
+                      setEmailChangeStep(1);
+                      setIsEmailChangeMode(true);
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0d9488', fontSize: '0.8rem', fontWeight: 600 }}
+                    className="hover:underline"
+                  >
+                    Change Admin Email ID?
+                  </button>
+                </div>
               </>
             ) : (
               /* Employee Form */
@@ -575,133 +1027,242 @@ export default function LoginView({ onLoginSuccess, employees = [] }) {
                     </>
                   )}
                 </button>
+
+                <div style={{ textAlign: 'center', marginTop: '0.25rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError('');
+                      setSuccessMessage('');
+                      setResetEmail(employeeEmail);
+                      setResetStep(1);
+                      setIsResetMode(true);
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.8rem', fontWeight: 500 }}
+                    className="hover:underline"
+                  >
+                    Forgot / Reset Password?
+                  </button>
+                </div>
               </>
             )}
+          </form>
+        ) : (
+          /* Reset Password Form (OTP Protected) */
+          resetStep === 1 ? (
+            /* Reset Step 1: Enter Email & Request OTP */
+            <form onSubmit={handleRequestResetOtp} className="login-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="reset-email">
+                  Registered {loginRole === 'admin' ? 'Admin' : 'Employee'} Email
+                </label>
+                <div className="login-input-wrap">
+                  <Mail size={17} className="login-input-icon" />
+                  <input
+                    id="reset-email"
+                    type="email"
+                    required
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder={loginRole === 'admin' ? "jpmaytrigroup@gmail.com" : "e.g. employee@maytri.com"}
+                    className="form-input login-input"
+                    autoFocus
+                  />
+                </div>
+              </div>
 
-            <div style={{ textAlign: 'center', marginTop: '0.25rem' }}>
+              <button
+                type="submit"
+                className="btn btn-primary login-submit-btn"
+                disabled={resetOtpLoading}
+              >
+                {resetOtpLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Sending Reset OTP...</span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound size={16} />
+                    <span>Send Passcode Reset OTP</span>
+                  </>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
                   setError('');
                   setSuccessMessage('');
-                  setResetEmail(loginRole === 'admin' ? adminEmail : employeeEmail);
-                  setIsResetMode(true);
+                  setIsResetMode(false);
+                  setResetStep(1);
                 }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.8rem', fontWeight: 500 }}
-                className="hover:underline"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginTop: '0.25rem'
+                }}
               >
-                Forgot / Reset {loginRole === 'admin' ? 'Passcode' : 'Password'}?
+                <ArrowLeft size={15} />
+                <span>Back to Sign In</span>
               </button>
-            </div>
-          </form>
-        ) : (
-          /* Reset Password Form */
-          <form onSubmit={handleResetSubmit} className="login-form">
-            <div className="form-group">
-              <label className="form-label" htmlFor="reset-email">
-                Registered Work Email
-              </label>
-              <div className="login-input-wrap">
-                <Mail size={17} className="login-input-icon" />
-                <input
-                  id="reset-email"
-                  type="email"
-                  required
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  placeholder="e.g. jp@ambhujamaytri.in or staff@maytri.com"
-                  className="form-input login-input"
-                  autoFocus
-                />
+            </form>
+          ) : (
+            /* Reset Step 2: Enter OTP & New Passcode */
+            <form onSubmit={handleVerifyAndResetPasscode} className="login-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="reset-otp" style={{ textAlign: 'center', display: 'block', fontSize: '0.9rem', fontWeight: 700 }}>
+                  Enter 6-Digit Verification OTP sent to {resetEmail}
+                </label>
+                <div className="login-input-wrap" style={{ justifyContent: 'center' }}>
+                  <Key size={18} className="login-input-icon" />
+                  <input
+                    id="reset-otp"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    required
+                    value={resetOtp}
+                    onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="• • • • • •"
+                    className="form-input login-input"
+                    style={{
+                      textAlign: 'center',
+                      fontSize: '1.5rem',
+                      letterSpacing: '0.55em',
+                      fontWeight: '800',
+                      fontFamily: 'monospace',
+                      padding: '0.75rem 1rem 0.75rem 2.5rem'
+                    }}
+                    autoFocus
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="new-password">
-                New Password (Min. 6 characters)
-              </label>
-              <div className="login-input-wrap">
-                <Lock size={17} className="login-input-icon" />
-                <input
-                  id="new-password"
-                  type={showNewPassword ? 'text' : 'password'}
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password"
-                  className="form-input login-input"
-                />
+              <div className="form-group">
+                <label className="form-label" htmlFor="new-password">
+                  New Passcode / Password (Min. 6 characters)
+                </label>
+                <div className="login-input-wrap">
+                  <Lock size={17} className="login-input-icon" />
+                  <input
+                    id="new-password"
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new passcode"
+                    className="form-input login-input"
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle-btn"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    aria-label={showNewPassword ? "Hide password" : "Show password"}
+                  >
+                    {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="confirm-password">
+                  Confirm New Passcode / Password
+                </label>
+                <div className="login-input-wrap">
+                  <Lock size={17} className="login-input-icon" />
+                  <input
+                    id="confirm-password"
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new passcode"
+                    className="form-input login-input"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary login-submit-btn"
+                disabled={resetVerifyLoading || resetOtp.length < 6}
+              >
+                {resetVerifyLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Verifying OTP &amp; Updating...</span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound size={16} />
+                    <span>Verify OTP &amp; Set New Passcode</span>
+                  </>
+                )}
+              </button>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.85rem' }}>
                 <button
                   type="button"
-                  className="password-toggle-btn"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  aria-label={showNewPassword ? "Hide password" : "Show password"}
+                  onClick={() => {
+                    setResetStep(1);
+                    setResetOtp('');
+                    setError('');
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    background: 'none',
+                    border: 'none',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
                 >
-                  {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <ArrowLeft size={15} />
+                  <span>Back to Step 1</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResendResetOtp}
+                  disabled={resetCountdown > 0 || resetOtpLoading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    background: 'none',
+                    border: 'none',
+                    color: resetCountdown > 0 ? '#94a3b8' : '#0d9488',
+                    fontWeight: 700,
+                    cursor: resetCountdown > 0 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {resetOtpLoading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Resending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={14} />
+                      <span>{resetCountdown > 0 ? `Resend in ${resetCountdown}s` : 'Resend Code'}</span>
+                    </>
+                  )}
                 </button>
               </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="confirm-password">
-                Confirm New Password
-              </label>
-              <div className="login-input-wrap">
-                <Lock size={17} className="login-input-icon" />
-                <input
-                  id="confirm-password"
-                  type={showNewPassword ? 'text' : 'password'}
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter new password"
-                  className="form-input login-input"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="btn btn-primary login-submit-btn"
-              disabled={resetLoading}
-            >
-              {resetLoading ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  <span>Updating Password...</span>
-                </>
-              ) : (
-                <>
-                  <KeyRound size={16} />
-                  <span>Update &amp; Set Password</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setError('');
-                setIsResetMode(false);
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.4rem',
-                background: 'none',
-                border: 'none',
-                color: '#64748b',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                marginTop: '0.25rem'
-              }}
-            >
-              <ArrowLeft size={15} />
-              <span>Back to Sign In</span>
-            </button>
-          </form>
+            </form>
+          )
         )}
 
         <div className="login-footer-note">

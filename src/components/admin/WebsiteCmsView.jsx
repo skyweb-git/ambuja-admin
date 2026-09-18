@@ -13,6 +13,7 @@ import {
   Edit3,
   Phone,
   Building,
+  Building2,
   Layers,
   MapPin,
   RefreshCw,
@@ -47,6 +48,7 @@ import {
   uploadMediaToAPI, 
   DEFAULT_CONTENT 
 } from '../../services/cmsService';
+import { getWebsiteUrl } from '../../services/apiConfig';
 
 const AVAILABLE_ICONS = [
   'Gamepad2', 'Waves', 'Building2', 'ShoppingBag', 'Dumbbell', 'Dices',
@@ -95,6 +97,13 @@ export default function WebsiteCmsView() {
             items: (fetchedContent.amenitiesSection?.items && fetchedContent.amenitiesSection.items.length > 0)
               ? fetchedContent.amenitiesSection.items
               : DEFAULT_CONTENT.amenitiesSection.items
+          },
+          projectsSection: {
+            ...DEFAULT_CONTENT.projectsSection,
+            ...(fetchedContent.projectsSection || {}),
+            items: (fetchedContent.projectsSection?.items && fetchedContent.projectsSection.items.length > 0)
+              ? fetchedContent.projectsSection.items
+              : DEFAULT_CONTENT.projectsSection.items
           }
         });
       }
@@ -126,8 +135,8 @@ export default function WebsiteCmsView() {
     }
   };
 
-  const handleTriggerUpload = (targetKey, category, title, resourceType) => {
-    setPendingUploadTarget({ key: targetKey, category, title, resourceType });
+  const handleTriggerUpload = (targetKey, category, title, resourceType, extraMeta = null) => {
+    setPendingUploadTarget({ key: targetKey, category, title, resourceType, extraMeta });
     if (fileInputRef.current) {
       fileInputRef.current.accept = resourceType === 'video' ? 'video/*' : resourceType === 'raw' ? 'application/pdf,*/*' : 'image/*';
       fileInputRef.current.click();
@@ -163,8 +172,25 @@ export default function WebsiteCmsView() {
                 url: uploadRes.data.cloudinaryUrl
               }
             }));
+          } else if (pendingUploadTarget.extraMeta?.projectIndex !== undefined && uploadRes.data?.cloudinaryUrl) {
+            const pIdx = pendingUploadTarget.extraMeta.projectIndex;
+            setContent((prev) => {
+              const prevProjects = prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items;
+              const updated = [...prevProjects];
+              if (updated[pIdx]) {
+                updated[pIdx] = { ...updated[pIdx], image: uploadRes.data.cloudinaryUrl };
+              }
+              return {
+                ...prev,
+                projectsSection: {
+                  ...(prev.projectsSection || {}),
+                  items: updated
+                }
+              };
+            });
           }
-          await loadCMSData();
+          const fetchedMedia = await fetchAllMedia();
+          if (fetchedMedia && fetchedMedia.data) setMediaList(fetchedMedia.data);
           setSaveSuccess(true);
           setTimeout(() => setSaveSuccess(false), 3000);
         } else {
@@ -179,6 +205,187 @@ export default function WebsiteCmsView() {
       setPendingUploadTarget(null);
     }
     e.target.value = '';
+  };
+
+  // Projects list manipulators
+  const handleAddProject = () => {
+    const newProject = {
+      id: `proj_${Date.now()}`,
+      title: 'New Luxury Township',
+      tagline: 'Signature Gated Community',
+      location: 'ORR Corridor, Hyderabad',
+      status: 'Upcoming Launch',
+      image: 'https://res.cloudinary.com/s8b4ps7b/image/upload/v1788847939/maytri_ambhuja/gallery/gallery_001.jpg',
+      buttonText: 'For More Info',
+      specs: [
+        { label: 'Project Area', value: '25 Acres' },
+        { label: 'Villas', value: '200 Units' },
+        { label: 'Clubhouse', value: '45,000 Sq.Ft' },
+        { label: 'Starting Price', value: '2.8 Cr*' }
+      ],
+      features: ['Modern Triplex Architecture', 'Landscaped Central Park', '24/7 Gated Security']
+    };
+    setContent(prev => ({
+      ...prev,
+      projectsSection: {
+        ...(prev.projectsSection || {}),
+        items: [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items), newProject]
+      }
+    }));
+  };
+
+  const handleUpdateProject = (index, field, value) => {
+    setContent(prev => {
+      const updated = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      updated[index] = { ...updated[index], [field]: value };
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updated
+        }
+      };
+    });
+  };
+
+  const handleDeleteProject = (index) => {
+    setContent(prev => {
+      const updated = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      updated.splice(index, 1);
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updated
+        }
+      };
+    });
+  };
+
+  const handleMoveProject = (index, direction) => {
+    setContent(prev => {
+      const updated = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= updated.length) return prev;
+      const temp = updated[index];
+      updated[index] = updated[targetIndex];
+      updated[targetIndex] = temp;
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updated
+        }
+      };
+    });
+  };
+
+  const handleAddSpec = (projectIndex) => {
+    setContent(prev => {
+      const updatedProjects = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      const project = { ...updatedProjects[projectIndex] };
+      const currentSpecs = Array.isArray(project.specs) ? [...project.specs] : [];
+      currentSpecs.push({ label: '', value: '' });
+      project.specs = currentSpecs;
+      updatedProjects[projectIndex] = project;
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updatedProjects
+        }
+      };
+    });
+  };
+
+  const handleUpdateSpec = (projectIndex, specIndex, field, value) => {
+    setContent(prev => {
+      const updatedProjects = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      const project = { ...updatedProjects[projectIndex] };
+      const currentSpecs = Array.isArray(project.specs) ? [...project.specs] : [];
+      currentSpecs[specIndex] = { ...currentSpecs[specIndex], [field]: value };
+      project.specs = currentSpecs;
+      updatedProjects[projectIndex] = project;
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updatedProjects
+        }
+      };
+    });
+  };
+
+  const handleDeleteSpec = (projectIndex, specIndex) => {
+    setContent(prev => {
+      const updatedProjects = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      const project = { ...updatedProjects[projectIndex] };
+      const currentSpecs = Array.isArray(project.specs) ? [...project.specs] : [];
+      currentSpecs.splice(specIndex, 1);
+      project.specs = currentSpecs;
+      updatedProjects[projectIndex] = project;
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updatedProjects
+        }
+      };
+    });
+  };
+
+  const handleAddFeature = (projectIndex) => {
+    setContent(prev => {
+      const updatedProjects = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      const project = { ...updatedProjects[projectIndex] };
+      const currentFeatures = Array.isArray(project.features) ? [...project.features] : [];
+      currentFeatures.push('');
+      project.features = currentFeatures;
+      updatedProjects[projectIndex] = project;
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updatedProjects
+        }
+      };
+    });
+  };
+
+  const handleUpdateFeature = (projectIndex, featureIndex, value) => {
+    setContent(prev => {
+      const updatedProjects = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      const project = { ...updatedProjects[projectIndex] };
+      const currentFeatures = Array.isArray(project.features) ? [...project.features] : [];
+      currentFeatures[featureIndex] = value;
+      project.features = currentFeatures;
+      updatedProjects[projectIndex] = project;
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updatedProjects
+        }
+      };
+    });
+  };
+
+  const handleDeleteFeature = (projectIndex, featureIndex) => {
+    setContent(prev => {
+      const updatedProjects = [...(prev.projectsSection?.items || DEFAULT_CONTENT.projectsSection.items)];
+      const project = { ...updatedProjects[projectIndex] };
+      const currentFeatures = Array.isArray(project.features) ? [...project.features] : [];
+      currentFeatures.splice(featureIndex, 1);
+      project.features = currentFeatures;
+      updatedProjects[projectIndex] = project;
+      return {
+        ...prev,
+        projectsSection: {
+          ...(prev.projectsSection || {}),
+          items: updatedProjects
+        }
+      };
+    });
   };
 
   // Amenities list manipulators
@@ -293,10 +500,11 @@ export default function WebsiteCmsView() {
             </button>
 
             <a
-              href="http://localhost:5173"
+              href={getWebsiteUrl(content)}
               target="_blank"
               rel="noreferrer"
               className="btn btn-secondary btn-sm"
+              title="Preview Website in new tab"
             >
               <span>Preview Site</span>
               <ExternalLink size={13} />
@@ -345,7 +553,7 @@ export default function WebsiteCmsView() {
           onClick={() => setActiveSubTab('media')}
         >
           <ImageIcon size={15} />
-          <span>🖼️ Media &amp; Cloud Assets</span>
+          <span>Media &amp; Cloud Assets</span>
         </button>
 
         <button
@@ -353,7 +561,15 @@ export default function WebsiteCmsView() {
           onClick={() => setActiveSubTab('brochure')}
         >
           <FileText size={15} />
-          <span>📄 Brochure PDF Kit</span>
+          <span>Brochure PDF Kit</span>
+        </button>
+
+        <button
+          className={`nav-tab-btn ${activeSubTab === 'projects' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('projects')}
+        >
+          <Building2 size={15} />
+          <span>Our Projects</span>
         </button>
 
         <button
@@ -361,7 +577,7 @@ export default function WebsiteCmsView() {
           onClick={() => setActiveSubTab('amenities')}
         >
           <Sparkles size={15} />
-          <span>🏝️ Resort Amenities</span>
+          <span>Resort Amenities</span>
         </button>
 
         <button
@@ -369,7 +585,7 @@ export default function WebsiteCmsView() {
           onClick={() => setActiveSubTab('hero')}
         >
           <Sparkles size={15} />
-          <span>✨ Hero &amp; Headline Copy</span>
+          <span>Hero &amp; Headline Copy</span>
         </button>
 
         <button
@@ -377,7 +593,7 @@ export default function WebsiteCmsView() {
           onClick={() => setActiveSubTab('about')}
         >
           <Building size={15} />
-          <span>🏢 About &amp; Township Stats</span>
+          <span>About &amp; Township Stats</span>
         </button>
 
         <button
@@ -385,7 +601,7 @@ export default function WebsiteCmsView() {
           onClick={() => setActiveSubTab('clubhouse')}
         >
           <Layers size={15} />
-          <span>🏊 Clubhouse Copy</span>
+          <span>Clubhouse Copy</span>
         </button>
 
         <button
@@ -393,7 +609,7 @@ export default function WebsiteCmsView() {
           onClick={() => setActiveSubTab('contact')}
         >
           <Phone size={15} />
-          <span>📞 Contact &amp; Sales Desk</span>
+          <span>Contact &amp; Sales Desk</span>
         </button>
       </div>
 
@@ -563,6 +779,362 @@ export default function WebsiteCmsView() {
               onChange={(e) => setContent({ ...content, brochure: { ...(content.brochure || {}), modalDesc: e.target.value } })}
               placeholder="Receive the official villa township brochure featuring master plan details..."
             />
+          </div>
+        </div>
+      )}
+
+      {/* TAB: OUR PROJECTS CMS MANAGER */}
+      {activeSubTab === 'projects' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Section Header Controls */}
+          <div className="table-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Building2 size={18} className="text-cyan-600" />
+              <span>Our Projects Section Header Settings</span>
+            </h3>
+
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Section Eyebrow Badge</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={content.projectsSection?.eyebrowTag || ''}
+                  onChange={(e) => setContent({ ...content, projectsSection: { ...(content.projectsSection || {}), eyebrowTag: e.target.value } })}
+                  placeholder="LANDMARK DEVELOPMENTS"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Section Main Title</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={content.projectsSection?.title || ''}
+                  onChange={(e) => setContent({ ...content, projectsSection: { ...(content.projectsSection || {}), title: e.target.value } })}
+                  placeholder="Our Projects"
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Section Subtitle</label>
+              <textarea
+                className="form-textarea"
+                rows={2}
+                value={content.projectsSection?.subtitle || ''}
+                onChange={(e) => setContent({ ...content, projectsSection: { ...(content.projectsSection || {}), subtitle: e.target.value } })}
+                placeholder="Explore premier master-planned townships and signature villa communities developed with unmatched luxury, architectural brilliance, and strategic connectivity."
+              />
+            </div>
+          </div>
+
+          {/* Dynamic Projects List Editor */}
+          <div className="table-card" style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <ListPlus size={18} className="text-cyan-600" />
+                  <span>Projects List ({content.projectsSection?.items?.length || 0})</span>
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>Add, edit, reorder, or remove landmark villa townships and master-planned projects.</p>
+              </div>
+
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleAddProject}
+              >
+                <Plus size={14} />
+                <span>Add New Project</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {(content.projectsSection?.items || []).map((project, idx) => (
+                <div 
+                  key={project.id || idx} 
+                  style={{ 
+                    background: '#f8fafc', 
+                    border: '1.5px solid #e2e8f0', 
+                    borderRadius: '12px', 
+                    padding: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                  }}
+                >
+                  {/* Card Top Row: Project title summary & actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <span style={{ fontWeight: 800, color: '#0f766e', background: '#ccfbf1', padding: '2px 8px', borderRadius: '6px', fontSize: '0.85rem' }}>
+                        #{idx + 1}
+                      </span>
+                      <span style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>
+                        {project.title || 'Untitled Project'}
+                      </span>
+                      {project.status && (
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: '999px' }}>
+                          {project.status}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '6px 8px' }}
+                        onClick={() => handleMoveProject(idx, -1)}
+                        disabled={idx === 0}
+                        title="Move Up"
+                      >
+                        <ArrowUp size={13} />
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '6px 8px' }}
+                        onClick={() => handleMoveProject(idx, 1)}
+                        disabled={idx === (content.projectsSection?.items?.length || 0) - 1}
+                        title="Move Down"
+                      >
+                        <ArrowDown size={13} />
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '6px 8px', color: '#dc2626', borderColor: '#fca5a5' }}
+                        onClick={() => handleDeleteProject(idx)}
+                        title="Delete Project"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Project Details Grid: Left Image & Right Fields */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) 1fr', gap: '1.25rem', alignItems: 'start' }}>
+                    {/* Image Column */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <label className="form-label" style={{ marginBottom: 0 }}>Project Image / Render</label>
+                      <div style={{ width: '100%', height: '160px', background: '#0f172a', borderRadius: '8px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', border: '1px solid #cbd5e1' }}>
+                        {project.image ? (
+                          <img 
+                            src={project.image} 
+                            alt={project.title || 'Project'} 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                          />
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>No image set</span>
+                        )}
+                      </div>
+
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ fontSize: '0.8rem' }}
+                          value={project.image || ''}
+                          onChange={(e) => handleUpdateProject(idx, 'image', e.target.value)}
+                          placeholder="Image URL (Cloudinary or Web)"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ width: '100%' }}
+                        onClick={() => handleTriggerUpload(`project_img_${idx}`, 'projects', `Project - ${project.title || 'Image'}`, 'image', { projectIndex: idx })}
+                        disabled={uploadingKey === `project_img_${idx}`}
+                      >
+                        {uploadingKey === `project_img_${idx}` ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>Uploading to Cloudinary...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={13} />
+                            <span>Upload New Image</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Metadata Column */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div className="form-grid-2">
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label">Project Title</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={project.title || ''}
+                            onChange={(e) => handleUpdateProject(idx, 'title', e.target.value)}
+                            placeholder="e.g. Maytri Ambhuja"
+                          />
+                        </div>
+
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label">Tagline / Subheading</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={project.tagline || ''}
+                            onChange={(e) => handleUpdateProject(idx, 'tagline', e.target.value)}
+                            placeholder="e.g. Flagship 55-Acre Villa Township"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-grid-2">
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label">Location</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={project.location || ''}
+                            onChange={(e) => handleUpdateProject(idx, 'location', e.target.value)}
+                            placeholder="e.g. Sanghi City, Near ORR Exit 11, Hyderabad"
+                          />
+                        </div>
+
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label">Status Badge</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={project.status || ''}
+                            onChange={(e) => handleUpdateProject(idx, 'status', e.target.value)}
+                            placeholder="e.g. Ready for VIP Booking"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label">CTA Button Text</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          value={project.buttonText || ''}
+                          onChange={(e) => handleUpdateProject(idx, 'buttonText', e.target.value)}
+                          placeholder="e.g. For More Info"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Specifications and Features Split Row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginTop: '0.25rem', paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                    {/* Specifications List */}
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.85rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155' }}>
+                          Specifications ({project.specs?.length || 0})
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '3px 8px', fontSize: '0.75rem' }}
+                          onClick={() => handleAddSpec(idx)}
+                        >
+                          <Plus size={12} />
+                          <span>Add Spec</span>
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {(project.specs || []).map((spec, sIdx) => (
+                          <div key={sIdx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.4rem', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              className="form-input"
+                              style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                              value={spec.label || ''}
+                              onChange={(e) => handleUpdateSpec(idx, sIdx, 'label', e.target.value)}
+                              placeholder="Label (e.g. Project Area)"
+                            />
+                            <input
+                              type="text"
+                              className="form-input"
+                              style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                              value={spec.value || ''}
+                              onChange={(e) => handleUpdateSpec(idx, sIdx, 'value', e.target.value)}
+                              placeholder="Value (e.g. 55 Acres)"
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '4px 6px', color: '#dc2626' }}
+                              onClick={() => handleDeleteSpec(idx, sIdx)}
+                              title="Remove Spec"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                        {(!project.specs || project.specs.length === 0) && (
+                          <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic', padding: '4px 0' }}>
+                            No specifications added yet. Click &quot;Add Spec&quot; above.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Key Features Bullet List */}
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.85rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155' }}>
+                          Key Features ({project.features?.length || 0})
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '3px 8px', fontSize: '0.75rem' }}
+                          onClick={() => handleAddFeature(idx)}
+                        >
+                          <Plus size={12} />
+                          <span>Add Feature</span>
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {(project.features || []).map((feat, fIdx) => (
+                          <div key={fIdx} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.4rem', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              className="form-input"
+                              style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                              value={feat || ''}
+                              onChange={(e) => handleUpdateFeature(idx, fIdx, e.target.value)}
+                              placeholder="Feature highlight (e.g. RERA: P02400007647)"
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '4px 6px', color: '#dc2626' }}
+                              onClick={() => handleDeleteFeature(idx, fIdx)}
+                              title="Remove Feature"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                        {(!project.features || project.features.length === 0) && (
+                          <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic', padding: '4px 0' }}>
+                            No key features added yet. Click &quot;Add Feature&quot; above.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {(!content.projectsSection?.items || content.projectsSection.items.length === 0) && (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                  No projects currently configured. Click &quot;Add New Project&quot; above to create one.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -954,13 +1526,13 @@ export default function WebsiteCmsView() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Official Website URL (www.ambhujamaytri.in)</label>
+              <label className="form-label">Official Website URL (www.maytriambhuja.in)</label>
               <input
                 type="text"
                 className="form-input"
                 value={content.contact?.websiteUrl || ''}
                 onChange={(e) => setContent({ ...content, contact: { ...content.contact, websiteUrl: e.target.value } })}
-                placeholder="https://www.ambhujamaytri.in"
+                placeholder="https://www.maytriambhuja.in"
               />
             </div>
           </div>

@@ -18,6 +18,7 @@ import {
   Clock
 } from 'lucide-react';
 import { exportLeadsToCSV } from '../services/leadStorage';
+import { getWebsiteUrl } from '../services/apiConfig';
 
 export default function Header({ 
   currentUser, 
@@ -139,7 +140,7 @@ export default function Header({
         </button>
 
         <a 
-          href="http://localhost:5173" 
+          href={getWebsiteUrl()} 
           target="_blank" 
           rel="noreferrer"
           className="btn btn-secondary btn-sm"
