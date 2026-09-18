@@ -180,13 +180,16 @@ export default function WebsiteCmsView() {
               if (updated[pIdx]) {
                 updated[pIdx] = { ...updated[pIdx], image: uploadRes.data.cloudinaryUrl };
               }
-              return {
+              const updatedContent = {
                 ...prev,
                 projectsSection: {
                   ...(prev.projectsSection || {}),
                   items: updated
                 }
               };
+              // Automatically persist the updated project image to API & MongoDB
+              saveContentToAPI(updatedContent).catch((err) => console.warn('Auto-save error:', err));
+              return updatedContent;
             });
           }
           const fetchedMedia = await fetchAllMedia();
