@@ -106,14 +106,40 @@ export const DEFAULT_CONTENT = {
         features: []
       }
     ]
-  }
+  },
+  theme: {
+    presetName: 'Oceanic Sapphire (Default)',
+    accentColor: '#0284c7',
+    accentGlow: '#38bdf8',
+    accentSubtle: '#e0f2fe',
+    darkPrimary: '#0b132b',
+    darkNavy: '#111c36',
+    darkNavyLight: '#1c2847',
+    pageBg: '#f8f9fb',
+    surfaceBg: '#ffffff',
+    surfaceSubtle: '#f1f3f7',
+    textColor: '#111c36',
+    textMuted: '#52637f',
+    borderColor: '#e2e6ed'
+  },
+  customThemes: []
 };
 
 export function getLocalContent() {
   if (typeof window === 'undefined') return DEFAULT_CONTENT;
   try {
     const raw = localStorage.getItem(CONTENT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : DEFAULT_CONTENT;
+    if (!raw) return DEFAULT_CONTENT;
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_CONTENT,
+      ...parsed,
+      customThemes: Array.isArray(parsed?.customThemes) ? parsed.customThemes : [],
+      theme: {
+        ...DEFAULT_CONTENT.theme,
+        ...(parsed?.theme || {})
+      }
+    };
   } catch (e) {
     return DEFAULT_CONTENT;
   }
@@ -125,8 +151,16 @@ export async function fetchContentFromAPI() {
     if (!res.ok) throw new Error('Failed to fetch content');
     const json = await res.json();
     if (json.success && json.data) {
-      localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(json.data));
-      return json.data;
+      const merged = {
+        ...DEFAULT_CONTENT,
+        ...json.data,
+        theme: {
+          ...DEFAULT_CONTENT.theme,
+          ...(json.data?.theme || {})
+        }
+      };
+      localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(merged));
+      return merged;
     }
   } catch (err) {
     console.warn('API content fetch failed, using local storage:', err.message);
